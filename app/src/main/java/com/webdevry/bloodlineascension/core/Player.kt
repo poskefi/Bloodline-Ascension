@@ -1,4 +1,3 @@
-// --- File: app/src/main/java/com/webdevry/bloodlineascension/core/Player.kt ---
 package com.webdevry.bloodlineascension.core
 
 import android.util.Log
@@ -7,67 +6,59 @@ import kotlin.math.roundToInt
 // Base Player class
 abstract class Player(
     val name: String,
-    initialHealth: Int, // Starting base health
-    initialAttackLight: Int,
-    initialAttackMedium: Int,
-    initialAttackHeavy: Int,
+    val initialHealth: Int,
+    val initialAttackLight: Int,
+    val initialAttackMedium: Int,
+    val initialAttackHeavy: Int,
     val imageResId: Int,
-    initialDefense: Int = 5,
-    initialVitality: Int = 5, // Base vitality
-    initialBloodPotency: Int = 5 // Base potency (only one will be used per subclass)
+    val initialDefense: Int = 5,
+    val initialVitality: Int = 5,
+    val initialBloodPotency: Int = 5,
+    private val onStatsChanged: (() -> Unit)? = null // NEW: callback for UI updates
 ) {
     companion object {
-        // Stat Point Allocation Constants
-        const val VITALITY_HP_BONUS = 8 // HP gained per Vitality point
-        const val BLOOD_POTENCY_HP_BONUS = 10 // HP gained per Blood Potency point
-        const val ATTACK_POINT_BOOST = 1 // Boosts all attack types per point
+        const val VITALITY_HP_BONUS = 8
+        const val BLOOD_POTENCY_HP_BONUS = 10
+        const val ATTACK_POINT_BOOST = 1
         const val DEFENSE_PER_POINT = 2
         const val POINTS_PER_LEVEL = 3
-
-        // Stamina Constants
         const val BASE_MAX_STAMINA = 100
         const val LIGHT_ATTACK_STAMINA_COST = 10
         const val MEDIUM_ATTACK_STAMINA_COST = 15
         const val HEAVY_ATTACK_STAMINA_COST = 25
-        const val STAMINA_REGEN_PER_TURN = 12 // How much stamina recovers
+        const val STAMINA_REGEN_PER_TURN = 12
     }
 
     abstract val role: String
 
-    // Base Stats (affected by points)
     var vitality: Int = initialVitality
+    var bloodPotency: Int = initialBloodPotency
+    var attackPower: Int = 0
         protected set
-    var bloodPotency: Int = initialBloodPotency // Only relevant for Vampires usually
-        protected set
-    var attackPower: Int = 0 // Represents points put into "Attack"
-        protected set
-    var defenseRating: Int = 0 // Represents points put into "Defense"
+    var defenseRating: Int = 0
         protected set
 
-    // Calculated Stats
-    var health: Int = calculateMaxHealth(initialHealth, 1, vitality, bloodPotency) // Initial calculation
+    var health: Int = calculateMaxHealth(initialHealth, 1, vitality, bloodPotency)
         protected set
-    var currentHealth: Int = health // Start at full health
+    var currentHealth: Int = health
 
     var attackLight: Int = calculateAttackValue(initialAttackLight, 0)
-        protected set
     var attackMedium: Int = calculateAttackValue(initialAttackMedium, 0)
-        protected set
     var attackHeavy: Int = calculateAttackValue(initialAttackHeavy, 0)
-        protected set
 
     var defense: Int = calculateDefenseValue(initialDefense, 0)
-        protected set
 
-    // Stamina
     var maxStamina: Int = BASE_MAX_STAMINA
         protected set
     var currentStamina: Int = maxStamina
         protected set
 
-    // Progression Stats
     var level: Int = 1
         protected set
+    var xp: Int = 0
+        private set
+    var xpToNextLevel: Int = 100
+        private set
     var experience: Int = 0
         protected set
     var experienceToNextLevel: Int = 10
@@ -76,33 +67,33 @@ abstract class Player(
         protected set
     var statPoints: Int = 0
         protected set
-
-    // Skill Properties
+    
     abstract val availableSkills: List<Skill>
     val learnedSkills: MutableList<Skill> = mutableListOf()
 
-    // --- Calculation Helpers ---
     protected abstract fun calculateMaxHealth(base: Int, level: Int, vit: Int, potency: Int): Int
     private fun calculateAttackValue(base: Int, points: Int): Int = base + (points * ATTACK_POINT_BOOST)
     private fun calculateDefenseValue(base: Int, points: Int): Int = base + (points * DEFENSE_PER_POINT)
 
-    // --- Combat Methods ---
     open fun takeDamage(amount: Int) {
         val damageTaken = (amount - defense).coerceAtLeast(1)
         currentHealth = (currentHealth - damageTaken).coerceAtLeast(0)
         Log.d("PlayerDamage", "$name took $damageTaken damage (Reduced by $defense defense). HP: $currentHealth/$health")
+        onStatsChanged?.invoke()
     }
 
     open fun restoreFullHealth() {
         Log.d("PlayerHealth", "$name restoring health. Before: $currentHealth/$health")
         currentHealth = health
         Log.d("PlayerHealth", "$name health restored. After: $currentHealth/$health")
+        onStatsChanged?.invoke()
     }
 
     open fun consumeStamina(amount: Int): Boolean {
         if (currentStamina >= amount) {
             currentStamina -= amount
             Log.d("PlayerStamina", "$name consumed $amount stamina. Remaining: $currentStamina/$maxStamina")
+            onStatsChanged?.invoke()
             return true
         }
         Log.w("PlayerStamina", "$name tried to use $amount stamina, but only has $currentStamina.")
@@ -113,9 +104,9 @@ abstract class Player(
         val recovered = STAMINA_REGEN_PER_TURN
         currentStamina = (currentStamina + recovered).coerceAtMost(maxStamina)
         Log.d("PlayerStamina", "$name recovered $recovered stamina. Current: $currentStamina/$maxStamina")
+        onStatsChanged?.invoke()
     }
 
-    // --- Progression Methods ---
     open fun gainWealth(amount: Long) { if (amount > 0) wealth += amount }
 
     open fun gainXP(amount: Int) {
@@ -123,6 +114,7 @@ abstract class Player(
             experience += amount
             Log.d("PlayerXP", "$name gained $amount XP. Total: $experience / $experienceToNextLevel")
             checkLevelUp()
+            onStatsChanged?.invoke() // refresh after XP gain or level-up
         }
     }
 
@@ -183,7 +175,6 @@ abstract class Player(
         return false
     }
 
-    // --- Stat Allocation Methods ---
     open fun allocatePointToVitality(): Boolean {
         if (statPoints > 0) {
             statPoints--
@@ -192,10 +183,12 @@ abstract class Player(
             health = calculateMaxHealth(health - getHealthBonusFromStats(level), level, vitality, bloodPotency)
             currentHealth += (health - oldHealth).coerceAtLeast(0)
             Log.d("StatAllocate", "$name allocated point to Vitality. New VIT: $vitality, Max HP: $health, Points Left: $statPoints")
+            onStatsChanged?.invoke()
             return true
         }
         return false
     }
+
     open fun allocatePointToBloodPotency(): Boolean {
         if (statPoints > 0) {
             statPoints--
@@ -204,6 +197,7 @@ abstract class Player(
             health = calculateMaxHealth(health - getHealthBonusFromStats(level), level, vitality, bloodPotency)
             currentHealth += (health - oldHealth).coerceAtLeast(0)
             Log.d("StatAllocate", "$name allocated point to Blood Potency. New BP: $bloodPotency, Max HP: $health, Points Left: $statPoints")
+            onStatsChanged?.invoke()
             return true
         }
         return false
@@ -218,6 +212,7 @@ abstract class Player(
             attackMedium = calculateAttackValue(attackMedium - oldAttackPower * ATTACK_POINT_BOOST, attackPower)
             attackHeavy = calculateAttackValue(attackHeavy - oldAttackPower * ATTACK_POINT_BOOST, attackPower)
             Log.d("StatAllocate", "$name allocated point to Attack Power. New ATK Power: $attackPower (L/M/H: $attackLight/$attackMedium/$attackHeavy), Points Left: $statPoints")
+            onStatsChanged?.invoke()
             return true
         }
         return false
@@ -230,12 +225,12 @@ abstract class Player(
             defenseRating++
             defense = calculateDefenseValue(defense - oldDefenseRating * DEFENSE_PER_POINT, defenseRating)
             Log.d("StatAllocate", "$name allocated point to Defense Rating. New DEF Rating: $defenseRating (DEF: $defense), Points Left: $statPoints")
+            onStatsChanged?.invoke()
             return true
         }
         return false
     }
 
-    // --- Display ---
     open fun displayStats(): String {
         val pointsStr = if (statPoints > 0) " ($statPoints Avail)" else ""
         return "Lvl:$level$pointsStr HP:$currentHealth/$health ATK:$attackMedium DEF:$defense W:$wealth XP:$experience/$experienceToNextLevel"

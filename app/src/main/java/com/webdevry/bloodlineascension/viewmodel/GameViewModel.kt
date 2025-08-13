@@ -1,4 +1,3 @@
-// --- File: app/src/main/java/com/webdevry/bloodlineascension/viewmodel/GameViewModel.kt ---
 package com.webdevry.bloodlineascension.viewmodel
 
 import androidx.lifecycle.ViewModel
@@ -89,6 +88,7 @@ class GameViewModel : ViewModel() {
                 canAdvanceFloor = false
             )
         }
+        refreshUiState()
         Log.d("GameViewModelInit", "GameState player after update: ${_gameState.value.player?.name}")
     }
 
@@ -140,7 +140,6 @@ class GameViewModel : ViewModel() {
             )
         }
     }
-
     fun advanceDungeonFloor() {
         val currentState = _gameState.value
         if (!currentState.canAdvanceFloor) {
@@ -175,7 +174,6 @@ class GameViewModel : ViewModel() {
             )
         }
     }
-
     fun processPlayerAction(action: PlayerAction) {
         val currentState = _gameState.value
         val player = currentState.player ?: return
@@ -187,7 +185,6 @@ class GameViewModel : ViewModel() {
             else -> { /* Continue */ }
         }
 
-        // Actions requiring active enemy and player's turn
         val enemy = currentState.currentEnemy ?: return
         if (!currentState.isPlayerTurn || currentState.isGameOver) {
             Log.w("ViewModelAction", "Invalid state for action: $action (Turn: ${currentState.isPlayerTurn}, Over: ${currentState.isGameOver})")
@@ -202,7 +199,7 @@ class GameViewModel : ViewModel() {
             PlayerAction.ATTACK_LIGHT -> Player.LIGHT_ATTACK_STAMINA_COST
             PlayerAction.ATTACK_MEDIUM -> Player.MEDIUM_ATTACK_STAMINA_COST
             PlayerAction.ATTACK_HEAVY -> Player.HEAVY_ATTACK_STAMINA_COST
-            PlayerAction.SKILL_LIST -> { turnEnds = false; 0 } // Opening list costs nothing
+            PlayerAction.SKILL_LIST -> { turnEnds = false; 0 }
             PlayerAction.FLEE -> 5
             else -> 0
         }
@@ -237,7 +234,7 @@ class GameViewModel : ViewModel() {
                 if (currentState.isBossEncounter) {
                     newLog.add("You cannot flee from the Floor Boss!")
                     turnEnds = true
-                } else if (Random.nextInt(10) >= 7) { // 30% flee chance
+                } else if (Random.nextInt(10) >= 7) {
                     newLog.add("You successfully fled!")
                     _gameState.update { it.copy(currentEnemy = null, combatLog = it.combatLog + newLog, isPlayerTurn = false, player = player) }
                     return
@@ -267,7 +264,6 @@ class GameViewModel : ViewModel() {
             _gameState.update { it.copy(isPlayerTurn = true, player = player) }
         }
     }
-
     fun processPlayerSkill(skill: Skill) {
         val currentState = _gameState.value
         val player = currentState.player ?: return
@@ -304,7 +300,6 @@ class GameViewModel : ViewModel() {
             }
         }
 
-        // Special: lifesteal for vamp bite
         if (skill.id == "vamp_bite" && !enemyDefeated) {
             val healAmount = skill.power / 3
             player.currentHealth = (player.currentHealth + healAmount).coerceAtMost(player.health)
@@ -325,7 +320,6 @@ class GameViewModel : ViewModel() {
             }
         }
     }
-
     private fun processEnemyTurn() {
         val currentState = _gameState.value
         val player = currentState.player ?: return
@@ -383,10 +377,12 @@ class GameViewModel : ViewModel() {
 
         if (player.currentHealth <= 0) playerDefeated = true
 
-        _gameState.update { it.copy(
-            combatLog = it.combatLog + newLog,
-            currentEnemy = enemy
-        )}
+        _gameState.update {
+            it.copy(
+                combatLog = it.combatLog + newLog,
+                currentEnemy = enemy
+            )
+        }
 
         if (playerDefeated) {
             handlePlayerDefeat(mutableListOf())
@@ -395,124 +391,111 @@ class GameViewModel : ViewModel() {
             Log.d("ViewModelCombat", "Enemy turn ended. Player turn now.")
         }
     }
-
     private fun decideEnemyAction(enemy: Enemy, player: Player): ChosenEnemyAction {
         val possible = mutableListOf<Pair<ChosenEnemyAction, Int>>()
         val hpPct = enemy.currentHealth.toFloat() / enemy.maxHealth.toFloat()
 
-        // Heal
         val heals = enemy.skills.filter { it.effectType == SkillEffectType.HEAL && it.target == SkillTarget.SELF }
-        if (heals.isNotEmpty()) {
-            val w = when { hpPct < 0.3 -> 80; hpPct < 0.6 -> 40; else -> 5 }
-            possible.add(ChosenEnemyAction(EnemyActionType.SKILL, heals.first()) to w)
-        }
-        // Defend
-        val defends = enemy.skills.filter { it.effectType == SkillEffectType.BUFF_DEFENSE && it.target == SkillTarget.SELF }
-        if (defends.isNotEmpty() && hpPct < 0.5) {
-            possible.add(ChosenEnemyAction(EnemyActionType.SKILL, defends.first()) to 25)
-        }
-        // Damage skills
-        val dmgSkills = enemy.skills.filter { it.effectType == SkillEffectType.DAMAGE }
-        dmgSkills.forEach { skill ->
-            var w = 20
-            if (player.currentHealth < player.health * 0.4) w += 15
-            possible.add(ChosenEnemyAction(EnemyActionType.SKILL, skill) to w)
-        }
-        // Basic attacks
-        var lw = 25; var mw = 35; var hw = 20
-        if (player.currentHealth < player.health * 0.25) { hw += 15; lw -= 10 }
-        else if (hpPct > 0.8) { lw += 10; hw -= 5 }
-        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.LIGHT) to lw.coerceAtLeast(5))
-        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.MEDIUM) to mw.coerceAtLeast(10))
-        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.HEAVY) to hw.coerceAtLeast(5))
+        if (heals.isNotEmpty() && hpPct < 0.4f) possible.add(ChosenEnemyAction(EnemyActionType.SKILL, heals.random()) to 50)
 
-        val total = possible.sumOf { it.second }
-        if (total <= 0) return ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.MEDIUM)
-        var roll = Random.nextInt(total)
+        val damageSkills = enemy.skills.filter { it.effectType == SkillEffectType.DAMAGE && it.target == SkillTarget.ENEMY }
+        if (damageSkills.isNotEmpty()) possible.add(ChosenEnemyAction(EnemyActionType.SKILL, damageSkills.random()) to 40)
+
+        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.LIGHT) to 20)
+        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.MEDIUM) to 30)
+        possible.add(ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.HEAVY) to 10)
+
+        val totalWeight = possible.sumOf { it.second }
+        val roll = Random.nextInt(totalWeight)
+        var cumulative = 0
         for ((action, weight) in possible) {
-            if (roll < weight) return action
-            roll -= weight
+            cumulative += weight
+            if (roll < cumulative) return action
         }
+
         return ChosenEnemyAction(EnemyActionType.ATTACK, attackType = EnemyAttackType.MEDIUM)
     }
-
-    // --- Stat Allocation ---
-    fun allocateStatPoint(statType: StatType) {
-        val currentPlayer = _gameState.value.player ?: return
-        var ok = false
-        when (statType) {
-            StatType.VITALITY -> { if (currentPlayer is HunterPlayer) ok = currentPlayer.allocatePointToVitality() else Log.w("StatAllocate", "Wrong type for Vitality") }
-            StatType.BLOOD_POTENCY -> { if (currentPlayer is VampirePlayer) ok = currentPlayer.allocatePointToBloodPotency() else Log.w("StatAllocate", "Wrong type for Blood Potency") }
-            StatType.ATTACK_POWER -> ok = currentPlayer.allocatePointToAttackPower()
-            StatType.DEFENSE_RATING -> ok = currentPlayer.allocatePointToDefenseRating()
-        }
-        if (ok) {
-            Log.d("ViewModelAllocate", "Stat point allocated to $statType.")
-            _gameState.update { it.copy(player = currentPlayer) }
-        } else {
-            Log.w("ViewModelAllocate", "Failed to allocate point for $statType.")
-        }
-    }
-
-    // --- Outcome Handlers ---
-    private fun handleEnemyDefeat(player: Player, defeatedEnemy: Enemy, log: MutableList<String>) {
-        val currentState = _gameState.value
-        Log.d("ViewModelCombat", "Handling enemy defeat: ${defeatedEnemy.name}")
-        log.add("${defeatedEnemy.name} has been defeated!")
-        log.add("You gained ${defeatedEnemy.rewardWealth} Wealth and ${defeatedEnemy.rewardXp} XP.")
-        player.gainWealth(defeatedEnemy.rewardWealth)
-        player.gainXP(defeatedEnemy.rewardXp)
-        player.restoreFullHealth()
-        log.add("${player.name} restored health!")
-
-        val enemiesCleared = currentState.enemiesClearedOnFloor + 1
-        var canAdvanceNow = currentState.canAdvanceFloor
-        val progressLog = mutableListOf<String>()
-
-        val currentFloorData = gameManager.dungeonLayout.find { it.floorNumber == currentState.currentDungeonFloor }
-
-        if (currentFloorData != null) {
-            if (currentState.isBossEncounter) {
-                Log.i("ViewModelDungeon", "Floor ${currentState.currentDungeonFloor} boss defeated!")
-                progressLog.add("Floor ${currentState.currentDungeonFloor} Cleared!")
-                canAdvanceNow = true
-            } else {
-                progressLog.add("Enemies cleared on floor: $enemiesCleared / ${currentFloorData.enemiesToClearForBoss}")
-                if (currentFloorData.bossEnemyId != null && enemiesCleared >= currentFloorData.enemiesToClearForBoss) {
-                    progressLog.add("The Floor Boss is now available!")
-                } else if (currentFloorData.bossEnemyId == null && enemiesCleared >= currentFloorData.enemiesToClearForBoss) {
-                    Log.i("ViewModelDungeon", "Floor ${currentState.currentDungeonFloor} cleared (no boss).")
-                    progressLog.add("Floor ${currentState.currentDungeonFloor} Cleared!")
-                    canAdvanceNow = true
-                }
-            }
-        } else { Log.e("ViewModelCombat", "Floor data missing during enemy defeat!") }
-
-        val combinedLog = currentState.combatLog + log + progressLog
-
+    private fun handleEnemyDefeat(player: Player, enemy: Enemy, newLog: MutableList<String>) {
+        val xpGained = Random.nextInt(20, 40)
+        player.gainXP(xpGained)
+        newLog.add("${enemy.name} is defeated! You gain $xpGained XP.")
         _gameState.update {
             it.copy(
-                player = player,
                 currentEnemy = null,
-                combatLog = combinedLog,
-                isPlayerTurn = false,
-                enemiesClearedOnFloor = enemiesCleared,
-                isBossEncounter = false,
-                canAdvanceFloor = canAdvanceNow
+                enemiesClearedOnFloor = it.enemiesClearedOnFloor + 1,
+                canAdvanceFloor = (it.enemiesClearedOnFloor + 1) >= 3 || it.isBossEncounter,
+                combatLog = it.combatLog + newLog,
+                player = player
             )
         }
-        Log.d("ViewModelCombat", "Enemy defeat processed. Can Advance: $canAdvanceNow")
+    }
+    private fun handlePlayerDefeat(newLog: MutableList<String>) {
+        newLog.add("You have been defeated! Game Over.")
+        _gameState.update { it.copy(isGameOver = true, combatLog = it.combatLog + newLog) }
     }
 
-    private fun handlePlayerDefeat(log: MutableList<String>) {
-        Log.d("GameViewModel", "Handling player defeat: ${_gameState.value.player?.name}")
-        val defeatMessage = "${_gameState.value.player?.name ?: "Player"} has been defeated! Game Over."
-        _gameState.update {
-            it.copy(
-                isGameOver = true,
-                isPlayerTurn = false,
-                combatLog = it.combatLog + log + defeatMessage
-            )
+    // --- UI State for StatsScreen ---
+    data class UiState(
+        val avatarResId: Int = -1,
+        val playerName: String = "",
+        val level: Int = 1,
+        val className: String = "",
+        val xp: Int = 0,
+        val xpToNext: Int = 100,
+        val health: Int = 0,
+        val maxHealth: Int = 0,
+        val attackLight: Int = 0,
+        val attackLightMax: Int = 0,
+        val attackMedium: Int = 0,
+        val attackMediumMax: Int = 0,
+        val attackHeavy: Int = 0,
+        val attackHeavyMax: Int = 0,
+        val defense: Int = 0,
+        val vitality: Int = 0,
+        val bloodPotency: Int = 0
+    )
+    private val _uiState = MutableStateFlow(UiState())
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    fun refreshUiState() {
+        val player = _gameState.value.player
+        if (player != null) {
+            _uiState.update {
+                it.copy(
+                    avatarResId = player.imageResId,
+                    playerName = player.name,
+                    level = player.level,
+                    className = player::class.simpleName ?: "",
+                    xp = player.xp,
+                    xpToNext = player.xpToNextLevel,
+                    health = player.currentHealth,
+                    maxHealth = player.health,
+                    attackLight = player.attackLight,
+                    attackLightMax = player.attackLight,
+                    attackMedium = player.attackMedium,
+                    attackMediumMax = player.attackMedium,
+                    attackHeavy = player.attackHeavy,
+                    attackHeavyMax = player.attackHeavy,
+                    defense = player.defense,
+                    vitality = player.vitality,
+                    bloodPotency = player.bloodPotency
+                )
+            }
         }
     }
+
+    fun allocatePoint(stat: String) {
+        val player = _gameState.value.player ?: return
+        when (stat.lowercase()) {
+            "defense" -> player.defense += 1
+            "vitality" -> player.vitality += 1
+            "blood" -> player.bloodPotency += 1
+            "attacklight" -> player.attackLight += 1
+            "attackmedium" -> player.attackMedium += 1
+            "attackheavy" -> player.attackHeavy += 1
+        }
+        refreshUiState()
+    }
+   //private val _uiState = MutableStateFlow(UiState())
+    //val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 }
