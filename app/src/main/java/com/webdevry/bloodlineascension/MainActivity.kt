@@ -1,16 +1,15 @@
 package com.webdevry.bloodlineascension
 
 import android.graphics.Color
-import com.webdevry.bloodlineascension.MyNavHost
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.core.view.WindowCompat
 import com.webdevry.bloodlineascension.core.GameManager
+import com.webdevry.bloodlineascension.ui.theme.BloodlineTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,7 +27,7 @@ class MainActivity : ComponentActivity() {
         val gameManager = GameManager()
 
         setContent {
-            MaterialTheme {
+            BloodlineTheme {
                 Surface {
                     MyNavHost()
                 }
